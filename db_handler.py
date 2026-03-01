@@ -1,183 +1,464 @@
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 
-# Configuration: Folder where JSON files are stored
-DB_FOLDER = 'database'
+
+DB_FOLDER = "database"
 if not os.path.exists(DB_FOLDER):
     os.makedirs(DB_FOLDER)
 
+
 class JSONDatabase:
+    # Caption:
+    # What: Centralize allowed enum-like values for roles and statuses.
+    # How: Store each allowed set as a class-level constant.
+    # Why: Prevent typos and keep validation rules consistent across methods.
+    VALID_ROLES = {"customer", "employee", "owner"}
+    VALID_TABLE_STATUSES = {"free", "reserved", "occupied"}
+    VALID_ORDER_STATUSES = {"kitchen", "ready", "served", "paid"}
+
     def __init__(self):
-        # Define file paths based on your schema
+        # Caption:
+        # What: Map each entity to its JSON storage file.
+        # How: Build absolute paths from the shared database folder.
+        # Why: Keep persistence paths centralized and easy to maintain.
         self.files = {
-            'users': os.path.join(DB_FOLDER, 'users.json'),
-            'tables': os.path.join(DB_FOLDER, 'tables.json'),
-            'menu': os.path.join(DB_FOLDER, 'menu.json'),
-            'reservations': os.path.join(DB_FOLDER, 'reservations.json'),
-            'orders': os.path.join(DB_FOLDER, 'orders.json'),
-            'transactions': os.path.join(DB_FOLDER, 'transactions.json')
+            "users": os.path.join(DB_FOLDER, "users.json"),
+            "tables": os.path.join(DB_FOLDER, "tables.json"),
+            "menu": os.path.join(DB_FOLDER, "menu.json"),
+            "reservations": os.path.join(DB_FOLDER, "reservations.json"),
+            "orders": os.path.join(DB_FOLDER, "orders.json"),
+            "transactions": os.path.join(DB_FOLDER, "transactions.json"),
         }
         self._initialize_files()
 
     def _initialize_files(self):
-        """Creates empty JSON files if they don't exist."""
+        # Caption:
+        # What: Ensure all required JSON files exist.
+        # How: Create missing files with an empty list.
+        # Why: Avoid file-not-found crashes on first run.
         for file_path in self.files.values():
             if not os.path.exists(file_path):
-                with open(file_path, 'w') as f:
-                    json.dump([], f)
+                with open(file_path, "w", encoding="utf-8") as file:
+                    json.dump([], file)
 
     def _read_data(self, entity_name):
-        """Generic helper to read data from a specific file."""
+        # Caption:
+        # What: Read one entity list from its JSON file.
+        # How: Parse JSON and return [] if file is missing/corrupted.
+        # Why: Keep consumers resilient to empty or broken storage state.
         try:
-            with open(self.files[entity_name], 'r') as f:
-                return json.load(f)
+            with open(self.files[entity_name], "r", encoding="utf-8") as file:
+                return json.load(file)
         except (FileNotFoundError, json.JSONDecodeError):
             return []
 
     def _write_data(self, entity_name, data):
-        """Generic helper to write data to a specific file."""
-        with open(self.files[entity_name], 'w') as f:
-            json.dump(data, f, indent=4) # Indent makes it human-readable as requested
+        # Caption:
+        # What: Persist one entity list to disk.
+        # How: Serialize with indentation for readability.
+        # Why: Provide a single write path and predictable file format.
+        with open(self.files[entity_name], "w", encoding="utf-8") as file:
+            json.dump(data, file, indent=4)
 
-# --- USERS ---
+    def _find_by_id(self, entity_name, id_field, entity_id):
+        # Caption:
+        # What: Locate a single record by ID.
+        # How: Iterate through loaded data and compare the ID field.
+        # Why: Reuse lookup logic across validation-heavy workflows.
+        data = self._read_data(entity_name)
+        for row in data:
+            if row.get(id_field) == entity_id:
+                return row
+        return None
+
+    @staticmethod
+    def _is_non_empty_text(value):
+        # Caption:
+        # What: Validate that input is non-empty text.
+        # How: Check type string and trim whitespace.
+        # Why: Block blank textual fields early.
+        return isinstance(value, str) and value.strip() != ""
+
+    @staticmethod
+    def _is_positive_int(value):
+        # Caption:
+        # What: Validate positive integer values from multiple input types.
+        # How: Accept int/float-int/string-int and reject bool/zero/negative.
+        # Why: Console input often arrives as strings and needs normalization.
+        if isinstance(value, bool):
+            return False
+        if isinstance(value, int):
+            return value > 0
+        if isinstance(value, float):
+            return value.is_integer() and value > 0
+        if isinstance(value, str):
+            return bool(re.fullmatch(r"[1-9]\d*", value.strip()))
+        return False
+
+    @staticmethod
+    def _is_positive_number(value):
+        # Caption:
+        # What: Validate positive numeric values.
+        # How: Convert to float safely and check greater than zero.
+        # Why: Pricing and payments require strict positive amounts.
+        if isinstance(value, bool):
+            return False
+        try:
+            return float(value) > 0
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _is_valid_date(date_str):
+        # Caption:
+        # What: Validate reservation date format.
+        # How: Parse with YYYY-MM-DD via datetime.strptime.
+        # Why: Keep dates consistent for comparisons and conflict checks.
+        if not isinstance(date_str, str):
+            return False
+        try:
+            datetime.strptime(date_str, "%Y-%m-%d")
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _is_valid_time(time_str):
+        # Caption:
+        # What: Validate reservation time format.
+        # How: Parse with HH:MM 24-hour format.
+        # Why: Prevent malformed times from breaking slot logic.
+        if not isinstance(time_str, str):
+            return False
+        try:
+            datetime.strptime(time_str, "%H:%M")
+            return True
+        except ValueError:
+            return False
+
+    @staticmethod
+    def _is_valid_phone(phone):
+        # Caption:
+        # What: Validate user phone syntax.
+        # How: Use regex with allowed characters and length range.
+        # Why: Prevent unusable or invalid contact values.
+        if not isinstance(phone, str):
+            return False
+        return bool(re.fullmatch(r"[0-9+()\- ]{7,20}", phone.strip()))
+
+    def _has_reservation_conflict(self, table_id, date_str, time_str, exclude_id=None):
+        # Caption:
+        # What: Detect table collisions for a date/time slot.
+        # How: Compare active reservations and optionally ignore one ID.
+        # Why: Required for create and modify reservation safety.
+        reservations = self._read_data("reservations")
+        for reservation in reservations:
+            if reservation.get("status") == "canceled":
+                continue
+            if exclude_id is not None and reservation.get("reservation_id") == exclude_id:
+                continue
+            same_slot = (
+                reservation.get("table_id") == table_id
+                and reservation.get("date") == date_str
+                and reservation.get("time") == time_str
+            )
+            if same_slot:
+                return True
+        return False
+
     def create_user(self, username, password, role, full_name, phone):
-        users = self._read_data('users')
-        
-        # Simple check to prevent duplicate usernames
-        if any(u['username'] == username for u in users):
+        # Caption:
+        # What: Create a user with full input validation and deduplication.
+        # How: Validate fields, normalize text, enforce unique username.
+        # Why: Avoid invalid account data and duplicate login identities.
+        if not self._is_non_empty_text(username):
+            return {"error": "Username must be a non-empty string"}
+        if not self._is_non_empty_text(password):
+            return {"error": "Password must be a non-empty string"}
+        if role not in self.VALID_ROLES:
+            return {"error": "Role must be customer, employee, or owner"}
+        if not self._is_non_empty_text(full_name):
+            return {"error": "Full name must be a non-empty string"}
+        if not self._is_valid_phone(phone):
+            return {"error": "Phone must be 7-20 chars and contain only digits/+()-"}
+
+        username = username.strip()
+        full_name = full_name.strip()
+        phone = phone.strip()
+
+        users = self._read_data("users")
+        if any(user.get("username", "").lower() == username.lower() for user in users):
             return {"error": "Username already exists"}
 
         new_user = {
             "user_id": str(uuid.uuid4()),
             "username": username,
-            "password": password, # In a real app, hash this!
-            "role": role, # 'customer', 'employee', 'owner'
+            "password": password,
+            "role": role,
             "full_name": full_name,
-            "phone": phone
+            "phone": phone,
         }
         users.append(new_user)
-        self._write_data('users', users)
+        self._write_data("users", users)
         return new_user
 
     def authenticate_user(self, username, password):
-        users = self._read_data('users')
+        users = self._read_data("users")
         for user in users:
-            if user['username'] == username and user['password'] == password:
+            if user.get("username") == username and user.get("password") == password:
                 return user
         return None
 
-# --- TABLES ---
     def add_table(self, capacity):
-        tables = self._read_data('tables')
+        # Caption:
+        # What: Create a new table record.
+        # How: Validate capacity as positive integer before storing.
+        # Why: Prevent impossible or broken capacity values in seating logic.
+        if not self._is_positive_int(capacity):
+            return {"error": "Capacity must be a positive integer"}
+
         new_table = {
             "table_id": str(uuid.uuid4()),
-            "capacity": capacity,
-            "status": "free" # Default status
+            "capacity": int(capacity),
+            "status": "free",
         }
+        tables = self._read_data("tables")
         tables.append(new_table)
-        self._write_data('tables', tables)
+        self._write_data("tables", tables)
         return new_table
 
     def update_table_status(self, table_id, new_status):
-        """Updates status to 'free', 'reserved', or 'occupied'"""
-        tables = self._read_data('tables')
+        # Caption:
+        # What: Update table availability state.
+        # How: Allow only predefined status values and persist update.
+        # Why: Keep table state machine constrained and predictable.
+        if new_status not in self.VALID_TABLE_STATUSES:
+            return False
+
+        tables = self._read_data("tables")
         for table in tables:
-            if table['table_id'] == table_id:
-                table['status'] = new_status
-                self._write_data('tables', tables)
+            if table.get("table_id") == table_id:
+                table["status"] = new_status
+                self._write_data("tables", tables)
                 return True
         return False
 
-    # --- MENU ---
     def add_menu_item(self, name, category, price):
-        menu = self._read_data('menu')
+        # Caption:
+        # What: Add a menu item with validation.
+        # How: Validate text fields and positive price, then round amount.
+        # Why: Ensure order pricing uses clean, valid menu data.
+        if not self._is_non_empty_text(name):
+            return {"error": "Menu item name must be a non-empty string"}
+        if not self._is_non_empty_text(category):
+            return {"error": "Menu item category must be a non-empty string"}
+        if not self._is_positive_number(price):
+            return {"error": "Price must be a positive number"}
+
         new_item = {
             "item_id": str(uuid.uuid4()),
-            "name": name,
-            "category": category,
-            "price": price,
-            "is_available": True
+            "name": name.strip(),
+            "category": category.strip(),
+            "price": round(float(price), 2),
+            "is_available": True,
         }
+        menu = self._read_data("menu")
         menu.append(new_item)
-        self._write_data('menu', menu)
+        self._write_data("menu", menu)
         return new_item
 
-# --- RESERVATIONS ---
     def create_reservation(self, customer_id, table_id, date_str, time_str, party_size):
-        reservations = self._read_data('reservations')
-        
-        # Validating table availability would happen in the Logic Layer, 
-        # here we just write the data.
-        new_res = {
+        # Caption:
+        # What: Create a reservation with strict booking checks.
+        # How: Verify user/table existence, date/time format, size, and conflicts.
+        # Why: Prevent overbooking and invalid reservations at creation time.
+        if self._find_by_id("users", "user_id", customer_id) is None:
+            return {"error": "Customer does not exist"}
+        table = self._find_by_id("tables", "table_id", table_id)
+        if table is None:
+            return {"error": "Table does not exist"}
+        if not self._is_valid_date(date_str):
+            return {"error": "Date must be in YYYY-MM-DD format"}
+        if not self._is_valid_time(time_str):
+            return {"error": "Time must be in HH:MM (24h) format"}
+        if not self._is_positive_int(party_size):
+            return {"error": "Party size must be a positive integer"}
+
+        party_size = int(party_size)
+        if party_size > int(table.get("capacity", 0)):
+            return {"error": "Party size exceeds table capacity"}
+        if self._has_reservation_conflict(table_id, date_str, time_str):
+            return {"error": "Table is already reserved for this date and time"}
+
+        new_reservation = {
             "reservation_id": str(uuid.uuid4()),
             "customer_id": customer_id,
             "table_id": table_id,
             "date": date_str,
             "time": time_str,
             "party_size": party_size,
-            "status": "confirmed"
+            "status": "confirmed",
         }
-        reservations.append(new_res)
-        self._write_data('reservations', reservations)
-        
-        # Automatically mark table as reserved?
-        # self.update_table_status(table_id, "reserved") 
-        return new_res
+        reservations = self._read_data("reservations")
+        reservations.append(new_reservation)
+        self._write_data("reservations", reservations)
+        return new_reservation
 
-# --- ORDERS ---
+    def modify_reservation(
+        self,
+        reservation_id,
+        date_str=None,
+        time_str=None,
+        party_size=None,
+        table_id=None,
+    ):
+        # Caption:
+        # What: Modify reservation fields (date/time/party size/table).
+        # How: Merge new inputs with current values, revalidate, recheck conflicts.
+        # Why: Support week-5 change requests without corrupting booking integrity.
+        reservations = self._read_data("reservations")
+        target = None
+        for reservation in reservations:
+            if reservation.get("reservation_id") == reservation_id:
+                target = reservation
+                break
+
+        if target is None:
+            return {"error": "Reservation not found"}
+        if target.get("status") == "canceled":
+            return {"error": "Canceled reservations cannot be modified"}
+
+        new_table_id = table_id if table_id is not None else target["table_id"]
+        new_date = date_str if date_str is not None else target["date"]
+        new_time = time_str if time_str is not None else target["time"]
+        new_party_size = party_size if party_size is not None else target["party_size"]
+
+        table = self._find_by_id("tables", "table_id", new_table_id)
+        if table is None:
+            return {"error": "Table does not exist"}
+        if not self._is_valid_date(new_date):
+            return {"error": "Date must be in YYYY-MM-DD format"}
+        if not self._is_valid_time(new_time):
+            return {"error": "Time must be in HH:MM (24h) format"}
+        if not self._is_positive_int(new_party_size):
+            return {"error": "Party size must be a positive integer"}
+
+        new_party_size = int(new_party_size)
+        if new_party_size > int(table.get("capacity", 0)):
+            return {"error": "Party size exceeds table capacity"}
+        if self._has_reservation_conflict(
+            new_table_id,
+            new_date,
+            new_time,
+            exclude_id=reservation_id,
+        ):
+            return {"error": "Table is already reserved for this date and time"}
+
+        target["table_id"] = new_table_id
+        target["date"] = new_date
+        target["time"] = new_time
+        target["party_size"] = new_party_size
+        target["status"] = "modified"
+
+        self._write_data("reservations", reservations)
+        return target
+
+    def cancel_reservation(self, reservation_id):
+        # Caption:
+        # What: Cancel an existing reservation.
+        # How: Mark status as canceled and store cancellation timestamp.
+        # Why: Preserve booking history while removing it from active scheduling.
+        reservations = self._read_data("reservations")
+        for reservation in reservations:
+            if reservation.get("reservation_id") == reservation_id:
+                if reservation.get("status") == "canceled":
+                    return {"error": "Reservation is already canceled"}
+                reservation["status"] = "canceled"
+                reservation["canceled_at"] = datetime.now().isoformat()
+                self._write_data("reservations", reservations)
+                return reservation
+        return {"error": "Reservation not found"}
+
     def create_order(self, table_id, customer_id, items_list):
-        """
-        items_list should be a list of dicts: 
-        [{'item_id': '...', 'quantity': 2, 'special_notes': 'no onions'}]
-        """
-        orders = self._read_data('orders')
-        
-        # Calculate total (Optional: Logic layer usually does this)
+        # Caption:
+        # What: Create an order tied to an existing customer and table.
+        # How: Validate references/items and compute total via menu lookup.
+        # Why: Block orphan orders and incorrect totals from invalid item input.
+        if self._find_by_id("tables", "table_id", table_id) is None:
+            return {"error": "Table does not exist"}
+        if self._find_by_id("users", "user_id", customer_id) is None:
+            return {"error": "Customer does not exist"}
+        if not isinstance(items_list, list) or len(items_list) == 0:
+            return {"error": "Items list must be a non-empty list"}
+
+        menu = self._read_data("menu")
+        menu_map = {item["item_id"]: item for item in menu}
+
         total_amount = 0.0
-        menu = self._read_data('menu')
-        # Simple lookup to calculate price (O(n^2) but fine for mock DB)
         for order_item in items_list:
-            for menu_item in menu:
-                if order_item['item_id'] == menu_item['item_id']:
-                    total_amount += menu_item['price'] * order_item['quantity']
+            item_id = order_item.get("item_id")
+            quantity = order_item.get("quantity")
+
+            if item_id not in menu_map:
+                return {"error": f"Menu item {item_id} does not exist"}
+            if not self._is_positive_int(quantity):
+                return {"error": "Item quantity must be a positive integer"}
+            total_amount += menu_map[item_id]["price"] * int(quantity)
 
         new_order = {
             "order_id": str(uuid.uuid4()),
             "table_id": table_id,
             "customer_id": customer_id,
-            "order_status": "kitchen", # pending -> kitchen
+            "order_status": "kitchen",
             "items": items_list,
-            "total_amount": round(total_amount, 2)
+            "total_amount": round(total_amount, 2),
         }
+        orders = self._read_data("orders")
         orders.append(new_order)
-        self._write_data('orders', orders)
+        self._write_data("orders", orders)
         return new_order
 
     def update_order_status(self, order_id, status):
-        """Updates to 'ready', 'served', 'paid'"""
-        orders = self._read_data('orders')
+        # Caption:
+        # What: Update the lifecycle state of an order.
+        # How: Enforce allowed statuses and persist when order exists.
+        # Why: Keep order workflow transitions valid.
+        if status not in self.VALID_ORDER_STATUSES:
+            return False
+
+        orders = self._read_data("orders")
         for order in orders:
-            if order['order_id'] == order_id:
-                order['order_status'] = status
-                self._write_data('orders', orders)
+            if order.get("order_id") == order_id:
+                order["order_status"] = status
+                self._write_data("orders", orders)
                 return True
         return False
 
-    # --- TRANSACTIONS ---
     def process_payment(self, order_id, amount, method):
-        transactions = self._read_data('transactions')
-        new_trans = {
+        # Caption:
+        # What: Record a payment transaction for an order.
+        # How: Validate order and payment data, save transaction, set order to paid.
+        # Why: Ensure financial records are valid and synchronized with order state.
+        if self._find_by_id("orders", "order_id", order_id) is None:
+            return {"error": "Order does not exist"}
+        if not self._is_positive_number(amount):
+            return {"error": "Payment amount must be a positive number"}
+        if not self._is_non_empty_text(method):
+            return {"error": "Payment method must be a non-empty string"}
+
+        new_transaction = {
             "transaction_id": str(uuid.uuid4()),
             "order_id": order_id,
-            "amount_paid": amount,
-            "payment_method": method,
-            "timestamp": datetime.now().isoformat()
+            "amount_paid": round(float(amount), 2),
+            "payment_method": method.strip(),
+            "timestamp": datetime.now().isoformat(),
         }
-        transactions.append(new_trans)
-        self._write_data('transactions', transactions)
-        
-        # Update order status to paid
+        transactions = self._read_data("transactions")
+        transactions.append(new_transaction)
+        self._write_data("transactions", transactions)
+
         self.update_order_status(order_id, "paid")
-        return new_trans
+        return new_transaction
