@@ -149,6 +149,16 @@ class JSONDatabase:
             return False
         return bool(re.fullmatch(r"[0-9+()\- ]{7,20}", phone.strip()))
 
+    @staticmethod
+    def _is_valid_email(email):
+        # Caption:
+        # What: Validate email syntax for account-based login.
+        # How: Use a simple regex that enforces local-part@domain format.
+        # Why: Email login only works reliably if stored values are structured.
+        if not isinstance(email, str):
+            return False
+        return bool(re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email.strip()))
+
     def _has_reservation_conflict(self, table_id, date_str, time_str, exclude_id=None):
         # Caption:
         # What: Detect table collisions for a date/time slot.
@@ -169,11 +179,11 @@ class JSONDatabase:
                 return True
         return False
 
-    def create_user(self, username, password, role, full_name, phone):
+    def create_user(self, username, password, role, full_name, phone, email=""):
         # Caption:
-        # What: Create a user with full input validation and deduplication.
-        # How: Validate fields, normalize text, enforce unique username.
-        # Why: Avoid invalid account data and duplicate login identities.
+        # What: Create a user with validated account/contact data.
+        # How: Validate fields, normalize values, enforce unique login identifiers.
+        # Why: Registration must reject duplicate usernames, phones, and emails.
         if not self._is_non_empty_text(username):
             return {"error": "Username must be a non-empty string"}
         if not self._is_non_empty_text(password):
@@ -184,14 +194,21 @@ class JSONDatabase:
             return {"error": "Full name must be a non-empty string"}
         if not self._is_valid_phone(phone):
             return {"error": "Phone must be 7-20 chars and contain only digits/+()-"}
+        if email and not self._is_valid_email(email):
+            return {"error": "Email must be in a valid format"}
 
         username = username.strip()
         full_name = full_name.strip()
         phone = phone.strip()
+        email = email.strip().lower()
 
         users = self._read_data("users")
         if any(user.get("username", "").lower() == username.lower() for user in users):
             return {"error": "Username already exists"}
+        if any(user.get("phone", "").strip() == phone for user in users):
+            return {"error": "Phone already exists"}
+        if email and any(user.get("email", "").lower() == email for user in users):
+            return {"error": "Email already exists"}
 
         new_user = {
             "user_id": str(uuid.uuid4()),
@@ -200,15 +217,30 @@ class JSONDatabase:
             "role": role,
             "full_name": full_name,
             "phone": phone,
+            "email": email,
         }
         users.append(new_user)
         self._write_data("users", users)
         return new_user
 
-    def authenticate_user(self, username, password):
+    def authenticate_user(self, identifier, password):
+        # Caption:
+        # What: Authenticate a user by username, email, or phone.
+        # How: Normalize the identifier, compare against all supported fields.
+        # Why: The feature list requires flexible login for account users/staff.
+        if not self._is_non_empty_text(identifier):
+            return None
+
+        identifier = identifier.strip()
+        lowered_identifier = identifier.lower()
         users = self._read_data("users")
         for user in users:
-            if user.get("username") == username and user.get("password") == password:
+            matches_identifier = (
+                user.get("username", "").lower() == lowered_identifier
+                or user.get("email", "").lower() == lowered_identifier
+                or user.get("phone", "").strip() == identifier
+            )
+            if matches_identifier and user.get("password") == password:
                 return user
         return None
 
