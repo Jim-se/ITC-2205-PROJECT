@@ -86,26 +86,30 @@ def prompt_registration(db, role="customer"):
     # What: Run an interactive console registration prompt.
     # How: Collect fields from input/getpass and pass them into register_account.
     # Why: The project uses a console UI, so the auth module needs prompt helpers.
-    print("\nRegistration")
-    username = input("Username: ").strip()
-    full_name = input("Full name: ").strip()
-    phone = input("Phone: ").strip()
-    email = input("Email (optional): ").strip()
-    password = getpass("Password: ")
-    confirm_password = getpass("Confirm password: ")
+    try:
+        print("\nRegistration")
+        username = input("Username: ").strip()
+        full_name = input("Full name: ").strip()
+        phone = input("Phone: ").strip()
+        email = input("Email (optional): ").strip()
+        password = getpass("Password: ")
+        confirm_password = getpass("Confirm password: ")
 
-    result = register_account(
-        db=db,
-        username=username,
-        password=password,
-        confirm_password=confirm_password,
-        full_name=full_name,
-        phone=phone,
-        email=email,
-        role=role,
-    )
-    print(result["message"])
-    return result
+        result = register_account(
+            db=db,
+            username=username,
+            password=password,
+            confirm_password=confirm_password,
+            full_name=full_name,
+            phone=phone,
+            email=email,
+            role=role,
+        )
+        print(result["message"])
+        return result
+    except Exception as e:
+        print(f"Registration error: {str(e)}")
+        return {"success": False, "message": f"Registration failed: {str(e)}"}
 
 
 def prompt_login(db):
@@ -113,15 +117,19 @@ def prompt_login(db):
     # What: Run an interactive console login prompt.
     # How: Collect identifier/password and pass them into login_account.
     # Why: Gives the console application a ready-to-use login entry point.
-    print("\nLogin")
-    identifier = input("Username, email, or phone: ").strip()
-    password = getpass("Password: ")
+    try:
+        print("\nLogin")
+        identifier = input("Username, email, or phone: ").strip()
+        password = getpass("Password: ")
 
-    result = login_account(db, identifier, password)
-    print(result["message"])
-    if result["success"]:
-        print(f"Redirect to: {result['redirect_to']}")
-    return result
+        result = login_account(db, identifier, password)
+        print(result["message"])
+        if result["success"]:
+            print(f"Redirect to: {result['redirect_to']}")
+        return result
+    except Exception as e:
+        print(f"Login error: {str(e)}")
+        return {"success": False, "message": f"Login failed: {str(e)}"}
 
 
 def run_auth_menu(db=None):
@@ -130,24 +138,33 @@ def run_auth_menu(db=None):
     # How: Loop over simple numeric choices and call the prompt helpers.
     # Why: The repo did not have a UI entry point, so this gives auth an immediate
     # standalone console interface for testing and integration.
-    if db is None:
-        db = JSONDatabase()
+    try:
+        if db is None:
+            db = JSONDatabase()
 
-    while True:
-        print("\nAuthentication Menu")
-        print("1. Register customer account")
-        print("2. Login")
-        print("3. Exit")
-        choice = input("Select an option: ").strip()
+        while True:
+            try:
+                print("\nAuthentication Menu")
+                print("1. Register customer account")
+                print("2. Login")
+                print("3. Exit")
+                choice = input("Select an option: ").strip()
 
-        if choice == "1":
-            prompt_registration(db)
-        elif choice == "2":
-            prompt_login(db)
-        elif choice == "3":
-            return None
-        else:
-            print("Invalid option")
+                if choice == "1":
+                    prompt_registration(db)
+                elif choice == "2":
+                    prompt_login(db)
+                elif choice == "3":
+                    return None
+                else:
+                    print("Invalid option")
+            except KeyboardInterrupt:
+                print("\nMenu interrupted by user")
+                return None
+            except Exception as e:
+                print(f"Menu error: {str(e)}")
+    except Exception as e:
+        print(f"Failed to initialize authentication menu: {str(e)}")
 
 
 if __name__ == "__main__":
