@@ -1,0 +1,11 @@
+[
+  {
+    "reservation_id": "legacy-1",
+    "customer_id": "guest",
+    "table_id": "7c72ede8-19be-4c62-9ed6-b1fbc97df79d",
+    "date": "2026-03-26",
+    "time": "20:00",
+    "party_size": 2,
+    "status": "cancelled"
+  }
+]

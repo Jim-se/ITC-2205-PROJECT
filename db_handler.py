@@ -2,7 +2,9 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
+import hashlib
+import secrets
 
 
 DB_FOLDER = "database"
@@ -18,6 +20,11 @@ class JSONDatabase:
     VALID_ROLES = {"customer", "employee", "owner"}
     VALID_TABLE_STATUSES = {"free", "reserved", "occupied"}
     VALID_ORDER_STATUSES = {"kitchen", "ready", "served", "paid"}
+    INACTIVE_RESERVATION_STATUSES = {"canceled", "cancelled", "completed"}
+    
+    # Login security constants
+    MAX_LOGIN_ATTEMPTS = 5
+    LOGIN_LOCKOUT_DURATION = 900  # 15 minutes in seconds
 
     def __init__(self):
         # Caption:
@@ -150,6 +157,84 @@ class JSONDatabase:
         return bool(re.fullmatch(r"[0-9+()\- ]{7,20}", phone.strip()))
 
     @staticmethod
+    def hash_password(password, salt=None):
+        # Caption:
+        # What: Hash a password using SHA256 with a random salt.
+        # How: Generate a random salt if not provided, concatenate with password,
+        #      then hash with SHA256 and return salt:hash format.
+        # Why: Store passwords securely and prevent rainbow table attacks.
+        if salt is None:
+            salt = secrets.token_hex(32)  # 64-character hex string
+        salted_password = salt + password
+        hashed = hashlib.sha256(salted_password.encode()).hexdigest()
+        return f"{salt}:{hashed}"
+    
+    @staticmethod
+    def verify_password(stored_hash, password):
+        # Caption:
+        # What: Verify a plaintext password against a stored hash.
+        # How: Extract salt from stored_hash, hash the provided password with it,
+        #      and compare the result.
+        # Why: Allow users to log in by comparing their input to stored credentials.
+        try:
+            salt, stored_hashed = stored_hash.split(":")
+            new_hash = JSONDatabase.hash_password(password, salt)
+            return new_hash == stored_hash
+        except (ValueError, AttributeError):
+            return False
+    
+    def is_account_locked(self, username):
+        # Caption:
+        # What: Check if an account is locked due to failed login attempts.
+        # How: Retrieve login_attempts record and check if timeout has expired.
+        # Why: Prevent brute force attacks by temporarily locking accounts.
+        users = self._read_data("users")
+        for user in users:
+            if user.get("username", "").lower() == username.lower():
+                if user.get("login_attempts", 0) >= self.MAX_LOGIN_ATTEMPTS:
+                    lockout_time = user.get("lockout_until")
+                    if lockout_time:
+                        lockout_dt = datetime.fromisoformat(lockout_time)
+                        if datetime.now() < lockout_dt:
+                            return True
+                        else:
+                            # Unlock the account
+                            user["login_attempts"] = 0
+                            user["lockout_until"] = None
+                            self._write_data("users", users)
+                            return False
+                return False
+        return False
+    
+    def record_failed_login(self, username):
+        # Caption:
+        # What: Increment failed login counter and lock account if necessary.
+        # How: Find user, increment attempts, set lockout time when max reached.
+        # Why: Track failed attempts for security monitoring and account protection.
+        users = self._read_data("users")
+        for user in users:
+            if user.get("username", "").lower() == username.lower():
+                user["login_attempts"] = user.get("login_attempts", 0) + 1
+                if user["login_attempts"] >= self.MAX_LOGIN_ATTEMPTS:
+                    lockout_until = datetime.now() + timedelta(seconds=self.LOGIN_LOCKOUT_DURATION)
+                    user["lockout_until"] = lockout_until.isoformat()
+                self._write_data("users", users)
+                return
+    
+    def reset_login_attempts(self, username):
+        # Caption:
+        # What: Clear failed login counters after successful login.
+        # How: Find user, reset attempts and lockout_until fields.
+        # Why: Allow users to retry after successful authentication.
+        users = self._read_data("users")
+        for user in users:
+            if user.get("username", "").lower() == username.lower():
+                user["login_attempts"] = 0
+                user["lockout_until"] = None
+                self._write_data("users", users)
+                return
+
+    @staticmethod
     def _is_valid_email(email):
         # Caption:
         # What: Validate email syntax for account-based login.
@@ -166,7 +251,7 @@ class JSONDatabase:
         # Why: Required for create and modify reservation safety.
         reservations = self._read_data("reservations")
         for reservation in reservations:
-            if reservation.get("status") == "canceled":
+            if reservation.get("status") in self.INACTIVE_RESERVATION_STATUSES:
                 continue
             if exclude_id is not None and reservation.get("reservation_id") == exclude_id:
                 continue
@@ -213,11 +298,13 @@ class JSONDatabase:
         new_user = {
             "user_id": str(uuid.uuid4()),
             "username": username,
-            "password": password,
+            "password": self.hash_password(password),
             "role": role,
             "full_name": full_name,
             "phone": phone,
             "email": email,
+            "login_attempts": 0,
+            "lockout_until": None,
         }
         users.append(new_user)
         self._write_data("users", users)
@@ -225,23 +312,40 @@ class JSONDatabase:
 
     def authenticate_user(self, identifier, password):
         # Caption:
-        # What: Authenticate a user by username, email, or phone.
-        # How: Normalize the identifier, compare against all supported fields.
-        # Why: The feature list requires flexible login for account users/staff.
+        # What: Authenticate a user by username, email, or phone with login attempt limits.
+        # How: Check if account is locked, verify password hash, update attempt counters.
+        # Why: The feature list requires flexible login with security against brute force.
         if not self._is_non_empty_text(identifier):
             return None
 
         identifier = identifier.strip()
         lowered_identifier = identifier.lower()
         users = self._read_data("users")
+        
         for user in users:
             matches_identifier = (
                 user.get("username", "").lower() == lowered_identifier
                 or user.get("email", "").lower() == lowered_identifier
                 or user.get("phone", "").strip() == identifier
             )
-            if matches_identifier and user.get("password") == password:
-                return user
+            
+            if matches_identifier:
+                username = user.get("username", "")
+                
+                # Check if account is locked
+                if self.is_account_locked(username):
+                    lockout_until = user.get("lockout_until", "")
+                    return None  # Account locked, return None
+                
+                # Verify hashed password
+                if self.verify_password(user.get("password", ""), password):
+                    self.reset_login_attempts(username)
+                    return user
+                else:
+                    # Record failed attempt
+                    self.record_failed_login(username)
+                    return None
+        
         return None
 
     def add_table(self, capacity):
@@ -360,7 +464,7 @@ class JSONDatabase:
 
         if target is None:
             return {"error": "Reservation not found"}
-        if target.get("status") == "canceled":
+        if target.get("status") in self.INACTIVE_RESERVATION_STATUSES:
             return {"error": "Canceled reservations cannot be modified"}
 
         new_table_id = table_id if table_id is not None else target["table_id"]
@@ -406,7 +510,7 @@ class JSONDatabase:
         reservations = self._read_data("reservations")
         for reservation in reservations:
             if reservation.get("reservation_id") == reservation_id:
-                if reservation.get("status") == "canceled":
+                if reservation.get("status") in self.INACTIVE_RESERVATION_STATUSES:
                     return {"error": "Reservation is already canceled"}
                 reservation["status"] = "canceled"
                 reservation["canceled_at"] = datetime.now().isoformat()

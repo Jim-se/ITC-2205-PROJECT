@@ -1,1 +1,46 @@
-[]
+[
+    {
+        "user_id": "be5a810f-fa64-4d09-a1fa-28c9cd84e43f",
+        "username": "testuser",
+        "password": "b6dbe0edd6cd97a8ce8896b5f8b2c4165443fa05dad03c42ccc8b4dd93464bf9:84106f03dd8b991dc18d86077e58750bb8c02fc703712d6d7d3697624929ca19",
+        "role": "customer",
+        "full_name": "Test User",
+        "phone": "5551234567",
+        "email": "",
+        "login_attempts": 20,
+        "lockout_until": "2026-03-19T12:17:13.987066"
+    },
+    {
+        "user_id": "57376bdb-0243-4212-8d52-7d640d46ba10",
+        "username": "john_doe",
+        "password": "790ef09503cd6fedc3202b9a2e73e9316ba20f8ed95408ced39981b65c9ab8eb:7c91adb3a2152a50b4e6332538a40f41f0b0336e3ec6320c253a6ff6e9b69273",
+        "role": "customer",
+        "full_name": "John Doe",
+        "phone": "5559876543",
+        "email": "john@example.com",
+        "login_attempts": 1,
+        "lockout_until": null
+    },
+    {
+        "user_id": "7b96f17b-1917-418d-8ae1-80cfc5b37679",
+        "username": "user1",
+        "password": "a658a927d590eef2b3859522f3aedc4a03ec6f1424bf139b699e21398cfacc78:5a58bc907aced22d913925a36e333c4c69e73e35c7ab3698d3c8b420b0e1d253",
+        "role": "customer",
+        "full_name": "User One",
+        "phone": "5551111111",
+        "email": "",
+        "login_attempts": 5,
+        "lockout_until": "2026-03-19T12:17:14.093414"
+    },
+    {
+        "user_id": "58653813-fe4f-4014-a829-eeac0d790c1b",
+        "username": "user2",
+        "password": "3617a964309c76d6db7885e797e14ef950c5226dd58a286fa247d82513765f67:e3373cfc6a5a086f5dd3f3361a067da9f85fbddcae8eff95a74bc75d31a033fb",
+        "role": "customer",
+        "full_name": "User Two",
+        "phone": "5552222222",
+        "email": "",
+        "login_attempts": 0,
+        "lockout_until": null
+    }
+]

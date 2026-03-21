@@ -66,11 +66,27 @@ def register_account(
 
 def login_account(db, identifier, password):
     # Caption:
-    # What: Log a user in using username, email, or phone.
-    # How: Call the database authentication helper and return a UI-friendly result.
-    # Why: Console screens need a simple function that combines auth and routing.
+    # What: Log a user in using username, email, or phone with security feedback.
+    # How: Call the database authentication helper and return a UI-friendly result
+    #      with specific error messages for lockouts.
+    # Why: Console screens need a simple function that combines auth, routing, and security.
     user = db.authenticate_user(identifier, password)
     if user is None:
+        # Check if account is locked
+        identifier_lower = identifier.strip().lower()
+        users_data = db._read_data("users")
+        for user_record in users_data:
+            matches = (
+                user_record.get("username", "").lower() == identifier_lower
+                or user_record.get("email", "").lower() == identifier_lower
+                or user_record.get("phone", "").strip() == identifier.strip()
+            )
+            if matches and db.is_account_locked(user_record.get("username", "")):
+                return {
+                    "success": False,
+                    "message": f"Account locked due to too many failed attempts. Try again in 15 minutes.",
+                }
+        
         return {"success": False, "message": "Invalid login credentials"}
 
     return {
