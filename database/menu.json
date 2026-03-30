@@ -1,1 +1,44 @@
-[]
+[
+    {
+        "item_id": "e99b834b-ec0e-478c-a170-abb410caa753",
+        "name": "Greek Salad",
+        "category": "Starter",
+        "price": 7.5,
+        "is_available": true
+    },
+    {
+        "item_id": "598cb5b8-f3d8-4d6b-b4a5-6ce9430ac6c5",
+        "name": "Bruschetta",
+        "category": "Starter",
+        "price": 6.0,
+        "is_available": true
+    },
+    {
+        "item_id": "8f8c963a-d723-405d-869b-b4a5a40e64f6",
+        "name": "Margherita Pizza",
+        "category": "Main",
+        "price": 11.5,
+        "is_available": true
+    },
+    {
+        "item_id": "7f15ed05-acab-4b32-8039-d75787752e7c",
+        "name": "Chicken Pasta",
+        "category": "Main",
+        "price": 13.0,
+        "is_available": true
+    },
+    {
+        "item_id": "909701e1-8a34-44dd-872c-8bb49d8dd78c",
+        "name": "Cheeseburger",
+        "category": "Main",
+        "price": 12.0,
+        "is_available": true
+    },
+    {
+        "item_id": "600667cb-5f06-4468-a23a-379a47c41381",
+        "name": "Lemonade",
+        "category": "Drink",
+        "price": 3.5,
+        "is_available": true
+    }
+]

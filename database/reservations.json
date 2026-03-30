@@ -1,1 +1,29 @@
-[]
+[
+    {
+        "reservation_id": "465daf05-f19d-4a29-9ff5-5ccbd0e107d5",
+        "reservation_code": "RES-9P0V0G",
+        "customer_id": "92f33c70-939f-4050-a40c-facdfeffe39f",
+        "table_id": "67105936-c8af-43ce-81c8-4a0614271e46",
+        "date": "2026-03-03",
+        "time": "22:00",
+        "party_size": 4,
+        "contact": {},
+        "special_requests": "",
+        "status": "canceled",
+        "created_at": "2026-03-30T15:38:29.959680",
+        "canceled_at": "2026-03-30T16:57:13.078997"
+    },
+    {
+        "reservation_id": "4736bf77-6e2f-43bd-9e77-e6e563c01ccd",
+        "reservation_code": "RES-O82120",
+        "customer_id": "92f33c70-939f-4050-a40c-facdfeffe39f",
+        "table_id": "81b6811a-97fb-4d6d-9d7c-b220db0ae7e6",
+        "date": "0001-01-01",
+        "time": "03:03",
+        "party_size": 3,
+        "contact": {},
+        "special_requests": "",
+        "status": "confirmed",
+        "created_at": "2026-03-30T16:28:08.949558"
+    }
+]

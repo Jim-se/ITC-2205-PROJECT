@@ -1,1 +1,16 @@
-[]
+[
+    {
+        "order_id": "33c4ee69-f17a-4b86-9684-d9c04698b9a5",
+        "table_id": "67105936-c8af-43ce-81c8-4a0614271e46",
+        "customer_id": "92f33c70-939f-4050-a40c-facdfeffe39f",
+        "order_status": "paid",
+        "items": [
+            {
+                "item_id": "598cb5b8-f3d8-4d6b-b4a5-6ce9430ac6c5",
+                "quantity": 1,
+                "special_notes": ""
+            }
+        ],
+        "total_amount": 6.0
+    }
+]

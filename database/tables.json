@@ -1,1 +1,32 @@
-[]
+[
+    {
+        "table_id": "9cfdd52a-ce59-44e3-af5f-cbe1fb7c86cf",
+        "capacity": 2,
+        "status": "free"
+    },
+    {
+        "table_id": "75b3fbf3-3b77-4a37-b58d-f9645c828c42",
+        "capacity": 2,
+        "status": "free"
+    },
+    {
+        "table_id": "67105936-c8af-43ce-81c8-4a0614271e46",
+        "capacity": 4,
+        "status": "free"
+    },
+    {
+        "table_id": "81b6811a-97fb-4d6d-9d7c-b220db0ae7e6",
+        "capacity": 4,
+        "status": "free"
+    },
+    {
+        "table_id": "a502920b-8964-481e-bcc4-ee7d683383d3",
+        "capacity": 6,
+        "status": "free"
+    },
+    {
+        "table_id": "383761dc-7cf9-421a-a046-30cc03e44c1e",
+        "capacity": 8,
+        "status": "free"
+    }
+]

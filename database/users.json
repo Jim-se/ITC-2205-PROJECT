@@ -7,8 +7,8 @@
         "full_name": "Test User",
         "phone": "5551234567",
         "email": "",
-        "login_attempts": 20,
-        "lockout_until": "2026-03-19T12:17:13.987066"
+        "login_attempts": 4,
+        "lockout_until": null
     },
     {
         "user_id": "57376bdb-0243-4212-8d52-7d640d46ba10",
@@ -18,8 +18,8 @@
         "full_name": "John Doe",
         "phone": "5559876543",
         "email": "john@example.com",
-        "login_attempts": 1,
-        "lockout_until": null
+        "login_attempts": 5,
+        "lockout_until": "2026-03-28T13:13:08.683630"
     },
     {
         "user_id": "7b96f17b-1917-418d-8ae1-80cfc5b37679",
@@ -29,8 +29,8 @@
         "full_name": "User One",
         "phone": "5551111111",
         "email": "",
-        "login_attempts": 5,
-        "lockout_until": "2026-03-19T12:17:14.093414"
+        "login_attempts": 3,
+        "lockout_until": null
     },
     {
         "user_id": "58653813-fe4f-4014-a829-eeac0d790c1b",
@@ -40,6 +40,17 @@
         "full_name": "User Two",
         "phone": "5552222222",
         "email": "",
+        "login_attempts": 0,
+        "lockout_until": null
+    },
+    {
+        "user_id": "92f33c70-939f-4050-a40c-facdfeffe39f",
+        "username": "dim",
+        "password": "f1a915998de532f3351ed468e302556683f531c3be9edbb85f0a27fc567916a6:f5fcf9681b9be0d6c254762344661546000c2efbe05071b18da93434ecdc5446",
+        "role": "customer",
+        "full_name": "kaps",
+        "phone": "12345678",
+        "email": "dkapsalis14@gmail.com",
         "login_attempts": 0,
         "lockout_until": null
     }

@@ -1,0 +1,6 @@
+.tmp/
+__pycache__/
+__reg_test*/
+__smoke*/
+*.log
+.vscode/
