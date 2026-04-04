@@ -1,7 +1,14 @@
 import os
 from getpass import getpass
 
-from auth_system import login_account, register_account
+from auth_system import (
+    get_secret_question_for_account,
+    get_secret_questions,
+    login_account,
+    register_account,
+    reset_password_after_recovery,
+    verify_secret_answer_for_account,
+)
 from availability_logic import get_available_tables
 from booking_logic import checkin_reservation, complete_reservation, create_reservation
 from db_handler import JSONDatabase
@@ -146,6 +153,28 @@ def input_role(default="customer"):
         if role_value in JSONDatabase.VALID_ROLES:
             return role_value
         print("Invalid role. Choose customer, employee, or owner.")
+
+
+def choose_secret_question(default=None):
+    questions = get_secret_questions()
+
+    while True:
+        print_heading("Secret Questions")
+        for index, question in enumerate(questions, start=1):
+            print(f"{index}. {question}")
+
+        default_value = str(default) if default else ""
+        choice = input_with_default("Choose a secret question number", default_value)
+        if choice.isdigit() and 1 <= int(choice) <= len(questions):
+            return int(choice)
+        print("Invalid secret question number. Choose one from the list.")
+
+
+def prompt_secret_question_answer(question_number):
+    question_text = get_secret_questions()[int(question_number) - 1]
+    print("Secret Question")
+    print(question_text)
+    return getpass("Answer: ")
 
 
 def seed_demo_data(db):
@@ -323,6 +352,8 @@ def prompt_registration(db):
         "phone": "",
         "email": "",
         "role": "customer",
+        "secret_question_number": None,
+        "secret_question_answer": "",
         "password": "",
         "confirm_password": "",
     }
@@ -339,6 +370,16 @@ def prompt_registration(db):
                 state["email"] = input_with_default("Email (optional)", state["email"])
             elif field_name == "role":
                 state["role"] = input_role(state["role"])
+            elif field_name == "secret_question_number":
+                state["secret_question_number"] = choose_secret_question(
+                    state["secret_question_number"]
+                )
+            elif field_name == "secret_question_answer":
+                question_number = state["secret_question_number"]
+                if question_number is None:
+                    question_number = choose_secret_question()
+                    state["secret_question_number"] = question_number
+                state["secret_question_answer"] = prompt_secret_question_answer(question_number)
             elif field_name == "password":
                 state["password"] = getpass("Password: ")
             elif field_name == "confirm_password":
@@ -359,10 +400,34 @@ def prompt_registration(db):
             return ["email"]
         if "Role" in message:
             return ["role"]
-        return ["username", "full_name", "phone", "email", "role", "password", "confirm_password"]
+        if "secret question" in message.lower():
+            if "answer" in message.lower():
+                return ["secret_question_answer"]
+            return ["secret_question_number"]
+        return [
+            "username",
+            "full_name",
+            "phone",
+            "email",
+            "role",
+            "secret_question_number",
+            "secret_question_answer",
+            "password",
+            "confirm_password",
+        ]
 
     collect_registration_fields(
-        ["username", "full_name", "phone", "email", "role", "password", "confirm_password"]
+        [
+            "username",
+            "full_name",
+            "phone",
+            "email",
+            "role",
+            "secret_question_number",
+            "secret_question_answer",
+            "password",
+            "confirm_password",
+        ]
     )
 
     while True:
@@ -375,12 +440,53 @@ def prompt_registration(db):
             phone=state["phone"],
             email=state["email"],
             role=state["role"],
+            secret_question_number=state["secret_question_number"],
+            secret_question_answer=state["secret_question_answer"],
         )
         print(result["message"])
         if result["success"]:
             pause_screen()
             return result
         collect_registration_fields(fields_from_registration_error(result["message"]))
+
+
+def prompt_password_reset(db, identifier):
+    clear_screen()
+    print_heading("Forgot Password")
+    question_result = get_secret_question_for_account(db, identifier)
+    if not question_result["success"]:
+        print(question_result["message"])
+        pause_screen()
+        return False
+    print("Answer your secret question to reset the password.")
+
+    while True:
+        secret_answer = prompt_secret_question_answer(question_result["question_number"])
+        verify_result = verify_secret_answer_for_account(db, identifier, secret_answer)
+        print(verify_result["message"])
+        if verify_result["success"]:
+            break
+
+        retry = input("Press Enter to try again or 0 to cancel: ").strip()
+        if retry == "0":
+            return False
+        clear_screen()
+        print_heading("Forgot Password")
+        print("Answer your secret question to reset the password.")
+
+    while True:
+        new_password = getpass("New password: ")
+        confirm_password = getpass("Confirm new password: ")
+        reset_result = reset_password_after_recovery(
+            db,
+            identifier,
+            new_password,
+            confirm_password,
+        )
+        print(reset_result["message"])
+        if reset_result["success"]:
+            pause_screen("Password reset complete. Press Enter to sign in: ")
+            return True
 
 
 def prompt_login(db):
@@ -403,7 +509,7 @@ def prompt_login(db):
             return result.get("user")
 
         retry = input(
-            "Press Enter to retry the password, type 1 to change account, or 0 to cancel: "
+            "Press Enter to retry the password, type 1 to change account, 2 for forgot password, or 0 to cancel: "
         ).strip()
         if retry == "0":
             return None
@@ -412,6 +518,14 @@ def prompt_login(db):
             if not identifier:
                 print("Login canceled.")
                 return None
+        elif retry == "2":
+            if prompt_password_reset(db, identifier):
+                clear_screen()
+                print_heading("Login")
+                print("Password updated. Sign in with your new password.")
+            else:
+                clear_screen()
+                print_heading("Login")
 
 
 def prompt_reservation(db, customer_id=None):

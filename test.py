@@ -13,6 +13,29 @@ def _make_test_db(tmp_path):
     return db
 
 
+def _create_test_user(
+    db,
+    username="test_anna",
+    password="pass123",
+    role="customer",
+    full_name="Anna T.",
+    phone="555-0000",
+    email="",
+    secret_question_number=1,
+    secret_question_answer="Fluffy",
+):
+    return db.create_user(
+        username=username,
+        password=password,
+        role=role,
+        full_name=full_name,
+        phone=phone,
+        email=email,
+        secret_question_number=secret_question_number,
+        secret_question_answer=secret_question_answer,
+    )
+
+
 def test_user_creation_and_login(tmp_path):
     # Caption:
     # What: Verify user creation and authentication basics.
@@ -20,7 +43,7 @@ def test_user_creation_and_login(tmp_path):
     # Why: Confirm account flow still works after input-validation changes.
     db = _make_test_db(tmp_path)
 
-    new_user = db.create_user("test_anna", "pass123", "customer", "Anna T.", "555-0000")
+    new_user = _create_test_user(db)
     assert new_user["username"] == "test_anna"
 
     logged_in = db.authenticate_user("test_anna", "pass123")
@@ -50,7 +73,7 @@ def test_reservation(tmp_path):
     # How: Create user/table, then reserve a valid date/time/party size.
     # Why: Confirm happy-path booking still works with stricter checks.
     db = _make_test_db(tmp_path)
-    user = db.create_user("test_anna", "pass123", "customer", "Anna T.", "555-0000")
+    user = _create_test_user(db)
     table = db.add_table(capacity=4)
 
     reservation = db.create_reservation(
@@ -66,7 +89,15 @@ def test_input_validation(tmp_path):
     # Why: Protect system integrity against malformed console input.
     db = _make_test_db(tmp_path)
 
-    bad_user = db.create_user("", "pass123", "customer", "Anna T.", "555-0000")
+    bad_user = db.create_user(
+        "",
+        "pass123",
+        "customer",
+        "Anna T.",
+        "555-0000",
+        secret_question_number=1,
+        secret_question_answer="Fluffy",
+    )
     assert "error" in bad_user
 
     bad_table = db.add_table(capacity=0)
@@ -75,7 +106,12 @@ def test_input_validation(tmp_path):
     bad_menu_item = db.add_menu_item("Soup", "Starter", -1)
     assert "error" in bad_menu_item
 
-    user = db.create_user("valid_user", "pass123", "customer", "Valid User", "555-1111")
+    user = _create_test_user(
+        db,
+        username="valid_user",
+        full_name="Valid User",
+        phone="555-1111",
+    )
     table = db.add_table(capacity=2)
 
     bad_date = db.create_reservation(
@@ -105,7 +141,7 @@ def test_modify_and_cancel_reservation(tmp_path):
     # How: Modify a booking, test conflict rejection, then cancel and re-check.
     # Why: Validate week-5 booking management requirements end-to-end.
     db = _make_test_db(tmp_path)
-    user = db.create_user("test_anna", "pass123", "customer", "Anna T.", "555-0000")
+    user = _create_test_user(db)
     table_one = db.add_table(capacity=4)
     table_two = db.add_table(capacity=6)
 
@@ -154,7 +190,7 @@ def test_orders_and_payments(tmp_path):
     # How: Create order from menu items, process payment, assert status=paid.
     # Why: Confirm order/payment flow remains correct after validations.
     db = _make_test_db(tmp_path)
-    user = db.create_user("test_anna", "pass123", "customer", "Anna T.", "555-0000")
+    user = _create_test_user(db)
     table = db.add_table(capacity=4)
     menu_item = db.add_menu_item("Test Burger", "Main", 10.00)
 

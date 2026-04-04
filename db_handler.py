@@ -40,6 +40,7 @@ class JSONDatabase:
             "transactions": os.path.join(DB_FOLDER, "transactions.json"),
         }
         self._initialize_files()
+        self._migrate_users_schema()
 
     def _initialize_files(self):
         # Caption:
@@ -50,6 +51,30 @@ class JSONDatabase:
             if not os.path.exists(file_path):
                 with open(file_path, "w", encoding="utf-8") as file:
                     json.dump([], file)
+
+    def _migrate_users_schema(self):
+        # Caption:
+        # What: Backfill newly added user fields into older records.
+        # How: Add missing secret-question keys and normalize legacy types.
+        # Why: Keep existing accounts compatible after schema changes.
+        users = self._read_data("users")
+        changed = False
+        for user in users:
+            if "secret_question_number" not in user:
+                user["secret_question_number"] = None
+                changed = True
+            elif isinstance(user.get("secret_question_number"), str):
+                number = user["secret_question_number"].strip()
+                if number.isdigit():
+                    user["secret_question_number"] = int(number)
+                    changed = True
+
+            if "secret_question_answer" not in user:
+                user["secret_question_answer"] = None
+                changed = True
+
+        if changed:
+            self._write_data("users", users)
 
     def _read_data(self, entity_name):
         # Caption:
@@ -79,6 +104,28 @@ class JSONDatabase:
         for row in data:
             if row.get(id_field) == entity_id:
                 return row
+        return None
+
+    def _find_user_by_identifier(self, identifier, users=None):
+        # Caption:
+        # What: Resolve a user by username, email, or phone.
+        # How: Normalize the identifier and compare it against each login field.
+        # Why: Multiple auth features need one shared lookup path.
+        if not self._is_non_empty_text(identifier):
+            return None
+
+        identifier = identifier.strip()
+        lowered_identifier = identifier.lower()
+        users = users if users is not None else self._read_data("users")
+
+        for user in users:
+            matches_identifier = (
+                user.get("username", "").lower() == lowered_identifier
+                or user.get("email", "").lower() == lowered_identifier
+                or user.get("phone", "").strip() == identifier
+            )
+            if matches_identifier:
+                return user
         return None
 
     @staticmethod
@@ -155,6 +202,16 @@ class JSONDatabase:
         if not isinstance(phone, str):
             return False
         return bool(re.fullmatch(r"[0-9+()\- ]{7,20}", phone.strip()))
+
+    @staticmethod
+    def _normalize_secret_answer(answer):
+        # Caption:
+        # What: Canonicalize secret-question answers before hashing/comparing.
+        # How: Trim, lowercase, and collapse repeated internal whitespace.
+        # Why: Minor typing differences should not lock users out of recovery.
+        if not isinstance(answer, str):
+            return ""
+        return " ".join(answer.strip().lower().split())
 
     @staticmethod
     def hash_password(password, salt=None):
@@ -264,7 +321,17 @@ class JSONDatabase:
                 return True
         return False
 
-    def create_user(self, username, password, role, full_name, phone, email=""):
+    def create_user(
+        self,
+        username,
+        password,
+        role,
+        full_name,
+        phone,
+        email="",
+        secret_question_number=None,
+        secret_question_answer=None,
+    ):
         # Caption:
         # What: Create a user with validated account/contact data.
         # How: Validate fields, normalize values, enforce unique login identifiers.
@@ -281,11 +348,17 @@ class JSONDatabase:
             return {"error": "Phone must be 7-20 chars and contain only digits/+()-"}
         if email and not self._is_valid_email(email):
             return {"error": "Email must be in a valid format"}
+        if not self._is_positive_int(secret_question_number):
+            return {"error": "Secret question selection is required"}
+        if not self._is_non_empty_text(secret_question_answer):
+            return {"error": "Secret question answer must be a non-empty string"}
 
         username = username.strip()
         full_name = full_name.strip()
         phone = phone.strip()
         email = email.strip().lower()
+        secret_question_number = int(secret_question_number)
+        normalized_secret_answer = self._normalize_secret_answer(secret_question_answer)
 
         users = self._read_data("users")
         if any(user.get("username", "").lower() == username.lower() for user in users):
@@ -303,12 +376,21 @@ class JSONDatabase:
             "full_name": full_name,
             "phone": phone,
             "email": email,
+            "secret_question_number": secret_question_number,
+            "secret_question_answer": self.hash_password(normalized_secret_answer),
             "login_attempts": 0,
             "lockout_until": None,
         }
         users.append(new_user)
         self._write_data("users", users)
         return new_user
+
+    def get_user_by_identifier(self, identifier):
+        # Caption:
+        # What: Expose flexible account lookup to higher-level auth flows.
+        # How: Reuse the shared identifier matcher.
+        # Why: Recovery and login screens need the same account resolution logic.
+        return self._find_user_by_identifier(identifier)
 
     def authenticate_user(self, identifier, password):
         # Caption:
@@ -318,35 +400,66 @@ class JSONDatabase:
         if not self._is_non_empty_text(identifier):
             return None
 
-        identifier = identifier.strip()
-        lowered_identifier = identifier.lower()
         users = self._read_data("users")
-        
-        for user in users:
-            matches_identifier = (
-                user.get("username", "").lower() == lowered_identifier
-                or user.get("email", "").lower() == lowered_identifier
-                or user.get("phone", "").strip() == identifier
-            )
-            
-            if matches_identifier:
-                username = user.get("username", "")
-                
-                # Check if account is locked
-                if self.is_account_locked(username):
-                    lockout_until = user.get("lockout_until", "")
-                    return None  # Account locked, return None
-                
-                # Verify hashed password
-                if self.verify_password(user.get("password", ""), password):
-                    self.reset_login_attempts(username)
-                    return user
-                else:
-                    # Record failed attempt
-                    self.record_failed_login(username)
-                    return None
-        
+        user = self._find_user_by_identifier(identifier, users)
+        if user is None:
+            return None
+
+        username = user.get("username", "")
+
+        # Check if account is locked
+        if self.is_account_locked(username):
+            return None
+
+        # Verify hashed password
+        if self.verify_password(user.get("password", ""), password):
+            self.reset_login_attempts(username)
+            return user
+
+        # Record failed attempt
+        self.record_failed_login(username)
         return None
+
+    def verify_secret_question_answer(self, identifier, secret_answer):
+        # Caption:
+        # What: Verify a recovery answer against the stored hashed value.
+        # How: Find the account, normalize the answer, then compare via hash helper.
+        # Why: Password recovery must validate answers without storing them in plain text.
+        if not self._is_non_empty_text(secret_answer):
+            return {"error": "Secret question answer must be a non-empty string"}
+
+        users = self._read_data("users")
+        user = self._find_user_by_identifier(identifier, users)
+        if user is None:
+            return {"error": "Account not found"}
+
+        if not user.get("secret_question_answer") or not user.get("secret_question_number"):
+            return {"error": "This account does not have password recovery set up"}
+
+        normalized_secret_answer = self._normalize_secret_answer(secret_answer)
+        if not self.verify_password(user.get("secret_question_answer", ""), normalized_secret_answer):
+            return {"error": "Incorrect answer to the secret question"}
+
+        return user
+
+    def update_user_password(self, identifier, new_password):
+        # Caption:
+        # What: Replace a user's password after a verified reset flow.
+        # How: Resolve the account, hash the new password, and clear lockout state.
+        # Why: Password resets should restore normal login access immediately.
+        if not self._is_non_empty_text(new_password):
+            return {"error": "Password must be a non-empty string"}
+
+        users = self._read_data("users")
+        user = self._find_user_by_identifier(identifier, users)
+        if user is None:
+            return {"error": "Account not found"}
+
+        user["password"] = self.hash_password(new_password)
+        user["login_attempts"] = 0
+        user["lockout_until"] = None
+        self._write_data("users", users)
+        return user
 
     def add_table(self, capacity):
         # Caption:

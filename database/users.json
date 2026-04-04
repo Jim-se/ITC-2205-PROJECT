@@ -8,7 +8,9 @@
         "phone": "5551234567",
         "email": "",
         "login_attempts": 4,
-        "lockout_until": null
+        "lockout_until": null,
+        "secret_question_number": null,
+        "secret_question_answer": null
     },
     {
         "user_id": "57376bdb-0243-4212-8d52-7d640d46ba10",
@@ -19,7 +21,9 @@
         "phone": "5559876543",
         "email": "john@example.com",
         "login_attempts": 5,
-        "lockout_until": "2026-03-28T13:13:08.683630"
+        "lockout_until": "2026-03-28T13:13:08.683630",
+        "secret_question_number": null,
+        "secret_question_answer": null
     },
     {
         "user_id": "7b96f17b-1917-418d-8ae1-80cfc5b37679",
@@ -30,7 +34,9 @@
         "phone": "5551111111",
         "email": "",
         "login_attempts": 3,
-        "lockout_until": null
+        "lockout_until": null,
+        "secret_question_number": null,
+        "secret_question_answer": null
     },
     {
         "user_id": "58653813-fe4f-4014-a829-eeac0d790c1b",
@@ -41,7 +47,9 @@
         "phone": "5552222222",
         "email": "",
         "login_attempts": 0,
-        "lockout_until": null
+        "lockout_until": null,
+        "secret_question_number": null,
+        "secret_question_answer": null
     },
     {
         "user_id": "92f33c70-939f-4050-a40c-facdfeffe39f",
@@ -51,7 +59,9 @@
         "full_name": "kaps",
         "phone": "12345678",
         "email": "dkapsalis14@gmail.com",
-        "login_attempts": 0,
-        "lockout_until": null
+        "login_attempts": 1,
+        "lockout_until": null,
+        "secret_question_number": null,
+        "secret_question_answer": null
     }
 ]

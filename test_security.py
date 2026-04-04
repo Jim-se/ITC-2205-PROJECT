@@ -10,10 +10,35 @@ from db_handler import JSONDatabase
 from datetime import datetime, timedelta
 
 
+def create_secured_user(
+    db,
+    username="testuser",
+    password="password123",
+    role="customer",
+    full_name="Test User",
+    phone="5551234567",
+    email="",
+    secret_question_number=1,
+    secret_question_answer="Fluffy",
+):
+    return db.create_user(
+        username=username,
+        password=password,
+        role=role,
+        full_name=full_name,
+        phone=phone,
+        email=email,
+        secret_question_number=secret_question_number,
+        secret_question_answer=secret_question_answer,
+    )
+
+
 @pytest.fixture
 def temp_db_folder():
     """Create a temporary folder for database files during testing."""
-    temp_dir = tempfile.mkdtemp()
+    base_dir = os.path.join(os.getcwd(), ".pytest_tmp_security")
+    os.makedirs(base_dir, exist_ok=True)
+    temp_dir = tempfile.mkdtemp(dir=base_dir)
     yield temp_dir
     shutil.rmtree(temp_dir)
 
@@ -102,13 +127,7 @@ class TestLoginLimits:
     
     def test_record_failed_login_increments_counter(self, db):
         """Test that failed login attempts are recorded."""
-        db.create_user(
-            username="testuser",
-            password="password123",
-            role="customer",
-            full_name="Test User",
-            phone="5551234567"
-        )
+        create_secured_user(db)
         
         # Record a failed attempt
         db.record_failed_login("testuser")
@@ -118,13 +137,7 @@ class TestLoginLimits:
     
     def test_account_locks_after_max_attempts(self, db):
         """Test that account locks after max failed attempts."""
-        db.create_user(
-            username="testuser",
-            password="password123",
-            role="customer",
-            full_name="Test User",
-            phone="5551234567"
-        )
+        create_secured_user(db)
         
         # Record max attempts
         for _ in range(db.MAX_LOGIN_ATTEMPTS):
@@ -135,13 +148,7 @@ class TestLoginLimits:
     
     def test_lockout_until_field_set(self, db):
         """Test that lockout_until field is set when account locks."""
-        db.create_user(
-            username="testuser",
-            password="password123",
-            role="customer",
-            full_name="Test User",
-            phone="5551234567"
-        )
+        create_secured_user(db)
         
         # Record max attempts
         for _ in range(db.MAX_LOGIN_ATTEMPTS):
@@ -157,13 +164,7 @@ class TestLoginLimits:
     
     def test_reset_login_attempts_after_success(self, db):
         """Test that login attempts reset after successful login."""
-        db.create_user(
-            username="testuser",
-            password="password123",
-            role="customer",
-            full_name="Test User",
-            phone="5551234567"
-        )
+        create_secured_user(db)
         
         # Record some failed attempts
         db.record_failed_login("testuser")
@@ -182,13 +183,7 @@ class TestLoginLimits:
     
     def test_authenticate_user_locked_account(self, db):
         """Test that authenticate_user returns None for locked account."""
-        db.create_user(
-            username="testuser",
-            password="password123",
-            role="customer",
-            full_name="Test User",
-            phone="5551234567"
-        )
+        create_secured_user(db)
         
         # Lock the account
         for _ in range(db.MAX_LOGIN_ATTEMPTS):
@@ -200,13 +195,7 @@ class TestLoginLimits:
     
     def test_authenticate_user_resets_attempts_on_success(self, db):
         """Test that successful login resets attempt counter."""
-        db.create_user(
-            username="testuser",
-            password="password123",
-            role="customer",
-            full_name="Test User",
-            phone="5551234567"
-        )
+        create_secured_user(db)
         
         # Record a couple failed attempts
         db.record_failed_login("testuser")
@@ -239,7 +228,9 @@ class TestAuthIntegration:
             role="customer",
             full_name="John Doe",
             phone="5559876543",
-            email="john@example.com"
+            email="john@example.com",
+            secret_question_number=2,
+            secret_question_answer="Athens",
         )
         
         assert created is not None
@@ -257,19 +248,23 @@ class TestAuthIntegration:
     
     def test_multiple_users_independent_lockouts(self, db):
         """Test that multiple users have independent lockout states."""
-        db.create_user(
+        create_secured_user(
+            db,
             username="user1",
             password="pass1",
-            role="customer",
             full_name="User One",
-            phone="5551111111"
+            phone="5551111111",
+            secret_question_number=3,
+            secret_question_answer="Pine",
         )
-        db.create_user(
+        create_secured_user(
+            db,
             username="user2",
             password="pass2",
-            role="customer",
             full_name="User Two",
-            phone="5552222222"
+            phone="5552222222",
+            secret_question_number=4,
+            secret_question_answer="River",
         )
         
         # Lock user1

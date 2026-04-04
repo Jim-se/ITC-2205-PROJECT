@@ -13,6 +13,19 @@ ROLE_REDIRECTS = {
     "owner": "owner_admin_panel",
 }
 
+SECRET_QUESTIONS = (
+    "What was the name of your first pet?",
+    "In what city were you born?",
+    "What was the name of your first school?",
+    "What is your mother's maiden name?",
+    "What was your childhood nickname?",
+    "What is the name of the street you grew up on?",
+    "What was the model of your first car?",
+    "What is your favorite food?",
+    "What is the last name of your favorite teacher?",
+    "What is the name of your best childhood friend?",
+)
+
 
 def get_role_redirect(role):
     # Caption:
@@ -20,6 +33,21 @@ def get_role_redirect(role):
     # How: Look up the role in ROLE_REDIRECTS and fall back to a safe default.
     # Why: Keeps role-routing logic in one place instead of scattering strings.
     return ROLE_REDIRECTS.get(role, "main_menu")
+
+
+def get_secret_questions():
+    return SECRET_QUESTIONS
+
+
+def get_secret_question_text(question_number):
+    try:
+        index = int(question_number) - 1
+    except (TypeError, ValueError):
+        return None
+
+    if 0 <= index < len(SECRET_QUESTIONS):
+        return SECRET_QUESTIONS[index]
+    return None
 
 
 def register_account(
@@ -31,12 +59,24 @@ def register_account(
     phone,
     email="",
     role="customer",
+    secret_question_number=None,
+    secret_question_answer="",
 ):
     # Caption:
     # What: Register a new account from console-provided input.
     # How: Validate password rules, delegate persistence to JSONDatabase,
     # then return a structured result for the UI layer.
     # Why: The project needed a dedicated registration flow separate from storage.
+    if get_secret_question_text(secret_question_number) is None:
+        return {
+            "success": False,
+            "message": "Choose one of the available secret questions",
+        }
+    if not isinstance(secret_question_answer, str) or not secret_question_answer.strip():
+        return {
+            "success": False,
+            "message": "Secret question answer must be a non-empty string",
+        }
     if password != confirm_password:
         return {"success": False, "message": "Passwords do not match"}
     if len(password) < 6:
@@ -52,6 +92,8 @@ def register_account(
         full_name=full_name,
         phone=phone,
         email=email,
+        secret_question_number=secret_question_number,
+        secret_question_answer=secret_question_answer,
     )
     if "error" in user:
         return {"success": False, "message": user["error"]}
@@ -97,6 +139,72 @@ def login_account(db, identifier, password):
     }
 
 
+def get_secret_question_for_account(db, identifier):
+    user = db.get_user_by_identifier(identifier)
+    if user is None:
+        return {"success": False, "message": "Account not found"}
+
+    question_number = user.get("secret_question_number")
+    question_text = get_secret_question_text(question_number)
+    if question_text is None or not user.get("secret_question_answer"):
+        return {
+            "success": False,
+            "message": "This account does not have password recovery set up",
+        }
+
+    return {
+        "success": True,
+        "message": "Secret question loaded",
+        "question_number": int(question_number),
+        "question": question_text,
+        "user": user,
+    }
+
+
+def verify_secret_answer_for_account(db, identifier, secret_question_answer):
+    user = db.verify_secret_question_answer(identifier, secret_question_answer)
+    if "error" in user:
+        return {"success": False, "message": user["error"]}
+
+    return {
+        "success": True,
+        "message": "Secret question answer verified",
+        "user": user,
+    }
+
+
+def reset_password_after_recovery(db, identifier, new_password, confirm_password):
+    if new_password != confirm_password:
+        return {"success": False, "message": "Passwords do not match"}
+    if len(new_password) < 6:
+        return {
+            "success": False,
+            "message": "Password must be at least 6 characters long",
+        }
+
+    user = db.update_user_password(identifier, new_password)
+    if "error" in user:
+        return {"success": False, "message": user["error"]}
+
+    return {
+        "success": True,
+        "message": "Password reset successful",
+        "user": user,
+    }
+
+
+def _prompt_secret_question_choice():
+    print("Choose a secret question:")
+    for index, question in enumerate(SECRET_QUESTIONS, start=1):
+        print(f"{index}. {question}")
+
+    while True:
+        choice = input("Secret question number: ").strip()
+        if get_secret_question_text(choice) is not None:
+            return int(choice)
+        print("Invalid secret question number")
+
+
 def prompt_registration(db, role="customer"):
     # Caption:
     # What: Run an interactive console registration prompt.
@@ -108,6 +216,8 @@ def prompt_registration(db, role="customer"):
         full_name = input("Full name: ").strip()
         phone = input("Phone: ").strip()
         email = input("Email (optional): ").strip()
+        secret_question_number = _prompt_secret_question_choice()
+        secret_question_answer = getpass("Secret question answer: ")
         password = getpass("Password: ")
         confirm_password = getpass("Confirm password: ")
 
@@ -120,6 +230,8 @@ def prompt_registration(db, role="customer"):
             phone=phone,
             email=email,
             role=role,
+            secret_question_number=secret_question_number,
+            secret_question_answer=secret_question_answer,
         )
         print(result["message"])
         return result
@@ -142,6 +254,26 @@ def prompt_login(db):
         print(result["message"])
         if result["success"]:
             print(f"Redirect to: {result['redirect_to']}")
+            return result
+
+        forgot_password = input("Forgot password? (y/N): ").strip().lower()
+        if forgot_password == "y":
+            question_result = get_secret_question_for_account(db, identifier)
+            print(question_result["message"])
+            if question_result["success"]:
+                answer = getpass(f"{question_result['question']}: ")
+                answer_result = verify_secret_answer_for_account(db, identifier, answer)
+                print(answer_result["message"])
+                if answer_result["success"]:
+                    new_password = getpass("New password: ")
+                    confirm_password = getpass("Confirm new password: ")
+                    reset_result = reset_password_after_recovery(
+                        db,
+                        identifier,
+                        new_password,
+                        confirm_password,
+                    )
+                    print(reset_result["message"])
         return result
     except Exception as e:
         print(f"Login error: {str(e)}")
